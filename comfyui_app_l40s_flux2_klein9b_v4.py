@@ -378,7 +378,8 @@ for repo, install_reqs in CUSTOM_NODE_REPOS:
 
 # FLUX 2 Klein 9B assets synchronized with QuickPod `quick_download_quickpod_codex_v2.sh`
 model_tasks = [
-    ("unet/FLUX", "flux-2-klein-9b-Q8_0.gguf", "unsloth/FLUX.2-klein-9B-GGUF", None),
+     ("unet/FLUX", "flux-2-klein-9b-Q5_K_M.gguf", "unsloth/FLUX.2-klein-9B-GGUF", None),
+    # ("unet/FLUX", "flux-2-klein-9b-Q8_0.gguf", "unsloth/FLUX.2-klein-9B-GGUF", None),
     ("text_encoders", "qwen_3_8b_fp8mixed.safetensors", "Comfy-Org/vae-text-encorder-for-flux-klein-9b", "split_files/text_encoders"),
     ("text_encoders", "Qwen3-8B-Gemini-2.5-Flash-Uncensored-Q8_0.gguf", "wazimondo/Qwen3-Uncensored-TextEncoders-FLUX-Klein-Z-Image-Turbo-GGUF", None),
     ("vae", "flux2-vae.safetensors", "Comfy-Org/vae-text-encorder-for-flux-klein-9b", "split_files/vae"),
