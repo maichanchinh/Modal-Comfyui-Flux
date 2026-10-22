@@ -102,16 +102,7 @@ def update_comfyui_manager_author_style():
     manager_dir = os.path.join(CUSTOM_NODES_DIR, "ComfyUI-Manager")
     if os.path.exists(manager_dir):
         print("Updating ComfyUI-Manager to the latest version...")
-        os.chdir(manager_dir)
-        try:
-            subprocess.run("git config pull.ff only", shell=True, check=True, capture_output=True, text=True)
-            result = subprocess.run("git pull --ff-only", shell=True, check=True, capture_output=True, text=True)
-            print("ComfyUI-Manager git pull output:", result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Error updating ComfyUI-Manager: {e.stderr}")
-        except Exception as e:
-            print(f"Unexpected error during ComfyUI-Manager update: {e}")
-        os.chdir(DATA_BASE)
+        update_git_repo(manager_dir, "ComfyUI-Manager")
     else:
         print("ComfyUI-Manager directory not found, installing...")
         try:
@@ -208,6 +199,7 @@ def update_git_repo(repo_dir: str, label: str):
         print(f"Skipping {label} update: {repo_dir} is not a git repository.")
         return
 
+    run_shell("git fetch origin", cwd=repo_dir, check=False)
     branch = detect_remote_branch(repo_dir)
     if not branch:
         print(f"Skipping {label} update: could not determine remote branch for origin.")
@@ -233,8 +225,13 @@ def update_git_repo(repo_dir: str, label: str):
         print(f"{label} git pull output: {output}")
         return
 
-    details = pull.stderr.strip() or pull.stdout.strip()
-    print(f"Error updating {label}: {details}")
+    # Fallback to hard reset if working directory has local modifications
+    print(f"{label} git pull failed ({pull.stderr.strip()}), performing hard reset to origin/{branch}...")
+    reset = run_shell(f"git reset --hard origin/{branch}", cwd=repo_dir, check=False)
+    if reset.returncode == 0:
+        print(f"{label} hard reset output: {reset.stdout.strip()}")
+    else:
+        print(f"Error updating {label}: {reset.stderr.strip()}")
 
 
 def sync_custom_node_repos():
@@ -308,11 +305,25 @@ def sync_frontend_requirements(requirements_path: str):
 
 def probe_runtime_dependencies():
     print(f"Runtime python: {sys.executable}")
-    for package_name in ("blake3", "comfy-aimdo", "torch", "torchvision", "torchaudio"):
+    for package_name in ("blake3", "comfy-aimdo", "comfy-kitchen", "torch", "torchvision", "torchaudio"):
         try:
             print(f"Runtime package: {package_name}={version(package_name)}")
         except PackageNotFoundError:
             print(f"Runtime package: {package_name}=MISSING")
+
+
+def ensure_comfy_kitchen_upgraded():
+    print("Ensuring comfy-kitchen and comfy-aimdo are up to date for latest ComfyUI backend...")
+    try:
+        result = subprocess.run(
+            ["/usr/local/bin/python", "-m", "pip", "install", "--upgrade", "comfy-kitchen", "comfy-aimdo"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print("comfy-kitchen upgrade output:", result.stdout)
+    except Exception as e:
+        print(f"Warning: Failed to upgrade comfy-kitchen/comfy-aimdo: {e}")
 
 def download_model(subdir: str, filename: str, primary_source: dict, backup_source: Optional[dict] = None, local_filename: Optional[str] = None):
     target_dir = os.path.join(MODELS_DIR, subdir)
@@ -361,7 +372,7 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "wget", "libgl1-mesa-glx", "libglib2.0-0", "ffmpeg", "imagemagick", "libmagickwand-dev")
     # 👇 ВИПРАВЛЕННЯ: Додано необхідні бібліотеки для кастомних нод
-    .pip_install("psd-tools", "PyWavelets", "tiktoken", "Wand", "gguf", "diffusers", "peft", "rotary_embedding_torch", "omegaconf", "blake3", "comfy-aimdo", "piexif")
+    .pip_install("psd-tools", "PyWavelets", "tiktoken", "Wand", "gguf", "diffusers", "peft", "rotary_embedding_torch", "omegaconf", "blake3", "comfy-aimdo", "comfy-kitchen", "piexif")
     .run_commands([
         "pip install --upgrade pip",
         "pip install --no-cache-dir --force-reinstall --index-url https://download.pytorch.org/whl/cu126 torch==2.11.0 torchvision==0.26.0 torchaudio==2.11.0",
@@ -473,6 +484,7 @@ def ui():
     ensure_comfyui_on_volume()
 
     update_comfyui_backend_author_style()
+    ensure_comfy_kitchen_upgraded()
     upgrade_runtime_tools_author_style()
     update_comfyui_frontend_author_style()
     update_comfyui_manager_author_style()

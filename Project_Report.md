@@ -1,3 +1,16 @@
+# 2026-08-06
+- done: додано 2 нові LoRA (`sks_ylkzk_c1-st3000.safetensors` та `sks_ylkzk_c1-st4000.safetensors`) з репозиторію `andrewwe/kr2` до `model_tasks` у `comfyui_app_l40s_krea2_turbo_v2.py`.
+- done: перевірено синтаксис скрипта.
+- done: pushed to git.
+
+# 2026-08-04
+- done: додано 2 нові LoRA (`sks_krnltk_c1-st3000.safetensors` та `sks_krnltk_c1-st4000.safetensors`) з репозиторію `andrewwe/kr2` до `model_tasks` у `comfyui_app_l40s_krea2_turbo_v2.py`.
+- fixed: виправлено помилку `AttributeError: 'NoneType' object has no attribute 'Params'` при виконанні CLIPLoader. Причина — після `git pull` бэкенд ComfyUI оновився (v0.30.0+) і вимагав новий layout `TensorCoreConvRotW4A4Layout` з `comfy-kitchen`, але в оточенні стояла стара версія `comfy-kitchen 0.2.16`. Додано функцію `ensure_comfy_kitchen_upgraded()`, що оновлює `comfy-kitchen` та `comfy-aimdo` при старті Modal.
+- fixed: оновлено закріплену версію фронтенду на `Comfy-Org/ComfyUI_frontend@latest` у `comfyui_app_l40s_krea2_turbo_v2.py` (усунено попередження про застарілий Frontend 1.47.10).
+- fixed: додано `git reset --hard` fallback у `update_git_repo()`, завдяки чому `ComfyUI-Manager` успішно оновлюється з V3.41 до V4.2.1+ навіть при наявності локальних службових файлів/міграцій.
+- fixed: прибрано `--front-end-version` з launch cmd повністю — тепер ComfyUI використовує фронтенд із pip-пакету `comfyui-frontend-package`, який версійно матчиться з бэкендом через `sync_frontend_requirements()`. Це мало фіксити відсутність прогресу на канвасі воркфлоу (WebSocket-протокол фронтенду і бэкенду розсинхронізувались).
+- done: перевірено синтаксис скриптів.
+
 # 2026-07-27
 - fixed: ComfyUI Manager не відображався в UI — додано `--enable-manager` до launch cmd (потрібен в нових версіях ComfyUI).
 - done: оновлено джерело `snofs_krea_v1_1.safetensors` на `canon12341/tester`.

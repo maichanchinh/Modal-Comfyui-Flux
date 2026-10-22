@@ -107,16 +107,7 @@ def update_comfyui_manager_author_style():
     manager_dir = os.path.join(CUSTOM_NODES_DIR, "ComfyUI-Manager")
     if os.path.exists(manager_dir):
         print("Updating ComfyUI-Manager to the latest version...")
-        os.chdir(manager_dir)
-        try:
-            subprocess.run("git config pull.ff only", shell=True, check=True, capture_output=True, text=True)
-            result = subprocess.run("git pull --ff-only", shell=True, check=True, capture_output=True, text=True)
-            print("ComfyUI-Manager git pull output:", result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Error updating ComfyUI-Manager: {e.stderr}")
-        except Exception as e:
-            print(f"Unexpected error during ComfyUI-Manager update: {e}")
-        os.chdir(DATA_BASE)
+        update_git_repo(manager_dir, "ComfyUI-Manager")
     else:
         print("ComfyUI-Manager directory not found, installing...")
         try:
@@ -213,6 +204,7 @@ def update_git_repo(repo_dir: str, label: str):
         print(f"Skipping {label} update: {repo_dir} is not a git repository.")
         return
 
+    run_shell("git fetch origin", cwd=repo_dir, check=False)
     branch = detect_remote_branch(repo_dir)
     if not branch:
         print(f"Skipping {label} update: could not determine remote branch for origin.")
@@ -238,8 +230,13 @@ def update_git_repo(repo_dir: str, label: str):
         print(f"{label} git pull output: {output}")
         return
 
-    details = pull.stderr.strip() or pull.stdout.strip()
-    print(f"Error updating {label}: {details}")
+    # Fallback to hard reset if working directory has local modifications
+    print(f"{label} git pull failed ({pull.stderr.strip()}), performing hard reset to origin/{branch}...")
+    reset = run_shell(f"git reset --hard origin/{branch}", cwd=repo_dir, check=False)
+    if reset.returncode == 0:
+        print(f"{label} hard reset output: {reset.stdout.strip()}")
+    else:
+        print(f"Error updating {label}: {reset.stderr.strip()}")
 
 
 def _sync_single_node(repo: str, install_reqs: bool):
@@ -343,11 +340,25 @@ def strip_workflow_template_media():
 
 def probe_runtime_dependencies():
     print(f"Runtime python: {sys.executable}")
-    for package_name in ("blake3", "comfy-aimdo", "torch", "torchvision", "torchaudio"):
+    for package_name in ("blake3", "comfy-aimdo", "comfy-kitchen", "torch", "torchvision", "torchaudio"):
         try:
             print(f"Runtime package: {package_name}={version(package_name)}")
         except PackageNotFoundError:
             print(f"Runtime package: {package_name}=MISSING")
+
+
+def ensure_comfy_kitchen_upgraded():
+    print("Ensuring comfy-kitchen and comfy-aimdo are up to date for latest ComfyUI backend...")
+    try:
+        result = subprocess.run(
+            ["/usr/local/bin/python", "-m", "pip", "install", "--upgrade", "comfy-kitchen", "comfy-aimdo"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        print("comfy-kitchen upgrade output:", result.stdout)
+    except Exception as e:
+        print(f"Warning: Failed to upgrade comfy-kitchen/comfy-aimdo: {e}")
 
 def download_model(subdir: str, filename: str, primary_source: dict, backup_source: Optional[dict] = None, local_filename: Optional[str] = None):
     target_dir = os.path.join(MODELS_DIR, subdir)
@@ -396,7 +407,7 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "wget", "libgl1-mesa-glx", "libglib2.0-0", "ffmpeg", "imagemagick", "libmagickwand-dev")
     # Libraries required by the custom nodes (kept aligned with the klein9b stack).
-    .pip_install("psd-tools", "PyWavelets", "tiktoken", "Wand", "gguf", "diffusers", "peft", "rotary_embedding_torch", "omegaconf", "blake3", "comfy-aimdo", "piexif")
+    .pip_install("psd-tools", "PyWavelets", "tiktoken", "Wand", "gguf", "diffusers", "peft", "rotary_embedding_torch", "omegaconf", "blake3", "comfy-aimdo", "comfy-kitchen", "piexif")
     .run_commands([
         # Bake latest pip/comfy-cli/uv into image to avoid runtime upgrades (~9s saved)
         "pip install --no-cache-dir --upgrade pip comfy-cli uv",
@@ -475,6 +486,10 @@ model_tasks = [
     ("loras/krea2", "BlovJbl4j.safetensors", "andrewwe/kr2", None),
     ("loras/krea2", "phone_photography_2025_krea2.safetensors", "Epyan/Kr", None),
     ("loras/krea2", "CodiVore.safetensors", "andrewwe/kr2", None),
+    ("loras/krea2", "sks_krnltk_c1-st3000.safetensors", "andrewwe/kr2", None),
+    ("loras/krea2", "sks_krnltk_c1-st4000.safetensors", "andrewwe/kr2", None),
+    ("loras/krea2", "sks_ylkzk_c1-st3000.safetensors", "andrewwe/kr2", None),
+    ("loras/krea2", "sks_ylkzk_c1-st4000.safetensors", "andrewwe/kr2", None),
 ]
 
 # Create volume (dedicated to the Krea 2 stack to keep it isolated from the klein9b volume)
@@ -495,6 +510,7 @@ def ui():
     ensure_comfyui_on_volume()
 
     update_comfyui_backend_author_style()
+    ensure_comfy_kitchen_upgraded()
     # v2: removed upgrade_runtime_tools_author_style() — pip/comfy-cli baked in image (~9s saved)
     # v2: replaced update_comfyui_frontend with hash-based sync (~23s saved)
     sync_frontend_requirements(os.path.join(DATA_BASE, "requirements.txt"))
@@ -562,7 +578,9 @@ def ui():
     # Launch ComfyUI from volume location
     print(f"Starting ComfyUI from {DATA_BASE} on {GPU_TYPE} with {BASE_MODEL_NAME} support...")
 
-    # v2: pinned frontend version to avoid GitHub HTTP lookup (~1-2s saved)
+    # v2: let ComfyUI use the version-matched frontend from comfyui-frontend-package
+    # (installed via sync_frontend_requirements). Avoids GitHub lookup and ensures
+    # frontend/backend WebSocket protocol compatibility for progress display.
     cmd = [
         "comfy",
         "launch",
@@ -573,8 +591,6 @@ def ui():
         "8000",
         "--enable-cors-header",
         "--enable-manager",
-        "--front-end-version",
-        "Comfy-Org/ComfyUI_frontend@1.47.10",
     ]
     print(f"Executing: {' '.join(cmd)}")
 
